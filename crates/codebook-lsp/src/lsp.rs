@@ -173,8 +173,10 @@ impl LanguageServer for Backend {
                 Ok(suggestions) => suggestions,
                 Err(e) => {
                     error!(
-                        "Error getting suggestions for word '{}' in file '{:?}'\n Error: {}",
-                        word, doc.uri, e
+                        "Error getting suggestions for word '{}' in file '{}'\n Error: {}",
+                        word,
+                        doc.uri.path(),
+                        e
                     );
                     return Ok(None);
                 }

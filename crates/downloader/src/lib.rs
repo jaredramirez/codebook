@@ -95,13 +95,28 @@ impl Downloader {
             None => self.download_new(url),
         }
         .or_else(|e| {
-            eprintln!("Failed to update, using cached version: {}", e);
-            let path = self.metadata.read().unwrap().files[url].path.clone();
-            if path.exists() {
-                Ok(path)
-            } else {
-                // If fallback path doesn't exist, try to download anyway
-                self.download_new(url)
+            log::error!("Failed to update, using cached version: {}", e);
+            let entry = {
+                let metadata = self.metadata.read().unwrap();
+                metadata
+                    .files
+                    .get(url)
+                    .map(|file_info| file_info.path.clone())
+            };
+            match entry {
+                Some(path) => {
+                    if path.exists() {
+                        Ok(path)
+                    } else {
+                        // If fallback path doesn't exist, try to download anyway
+                        self.download_new(url)
+                    }
+                }
+                None => {
+                    // URL not found in the files hashmap, try to download it
+                    log::warn!("URL not found in cache, attempting fresh download: {}", url);
+                    self.download_new(url)
+                }
             }
         })
     }
@@ -116,18 +131,17 @@ impl Downloader {
                 .get(url)
                 .and_then(|e| e.last_modified)
         };
-        println!("yoooooo");
-        println!("{:?}", last_modified);
-        println!("URL {:?}", url);
+        // log::info!("{:?}", last_modified);
+        // log::info!("URL {:?}", url);
 
         let mut request = self.client.get(url);
         if let Some(lm) = last_modified {
             request = request.header(IF_MODIFIED_SINCE, lm.with_timezone(&Utc).to_rfc2822());
         }
-        println!("{:?}", request);
+        // log::info!("{:?}", request);
 
         let response = request.send()?;
-        println!("RESPONSE {:?}", response);
+        // log::info!("RESPONSE {:?}", response);
 
         match response.status().as_u16() {
             304 => self.update_check_time(url),
@@ -159,7 +173,6 @@ impl Downloader {
 
     fn download_new(&self, url: &str) -> Result<PathBuf> {
         let response = self.client.get(url).send()?;
-        println!("{:?}", response);
         let last_modified = parse_last_modified(&response);
         let temp_file = self.download_to_temp(response)?;
         let new_hash = compute_file_hash(temp_file.path())?;
